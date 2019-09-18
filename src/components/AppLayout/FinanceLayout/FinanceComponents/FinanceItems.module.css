@@ -1,0 +1,21 @@
+.xs {
+  width: 70px;
+}
+
+.sm {
+  width: 110px;
+}
+
+.md {
+  width: 190px;
+}
+
+.remove {
+  width: 30px;
+  padding-bottom: 6px;
+}
+
+.total {
+  width: 120px;
+  text-align: right;
+}

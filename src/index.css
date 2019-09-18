@@ -1,0 +1,55 @@
+body,
+html,
+#root {
+  height: 100%;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+@media print {
+  body,
+  html,
+  #root {
+    height: auto;
+  }
+
+  nav {
+    display: none !important;
+  }
+}
+
+.h1,
+.h2,
+.h3,
+.h4,
+.h5,
+.h6,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 300;
+}
+
+a {
+  color: #289ecb;
+}
+
+.page-item.active .page-link {
+  background: #289ecb;
+  border-color: #289ecb;
+}
+
+div.ReactModalPortal:last-of-type > div {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+}
+
+.overlapping {
+  z-index: 2000;
+}
+
+.no-padding {
+  padding: 0;
+}

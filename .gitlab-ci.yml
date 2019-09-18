@@ -1,0 +1,188 @@
+# Pipelines:
+
+## dev: test -> build & push -> deploy
+## staging, master: build & push -> deploy
+## training, master: build & push -> deploy
+## (all other) feature branches: test (on shared runners)
+
+# Stages
+
+stages:
+  - test
+  - build
+  - deploy
+
+# Variables
+
+variables:
+  IMAGE: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_NAME}
+  IMAGE_SHA: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}
+  HELM_CHARTS_DIR: ./helm
+  HELM_CHART_NAME: frontend
+
+# Templates
+
+.test_template: &test_definition
+  stage: test
+  image: callstats/docker-with-bash
+  variables:
+    DOCKER_DRIVER: overlay
+  services:
+    - docker:dind
+  script:
+    - source ./docker/scripts/ci-env-setup.sh
+    - |
+      Print_CI_Message "BUILDING IMAGE FOR TESTS, EVNIRONMENT: ${ENVIRONMENT}"
+      export TEST_BUILD_TAG=${CI_REGISTRY_IMAGE}:test-${CI_COMMIT_SHA}
+    - docker build --target sources --build-arg ENVIRONMENT=${ENVIRONMENT} -t ${TEST_BUILD_TAG} .
+    - |
+      Print_CI_Message "RUNNING TESTS"
+      docker run --rm ${TEST_BUILD_TAG} sh -c "CI=1 npm test && npm run tslint:lint"
+  after_script:
+    - export TEST_BUILD_TAG=${CI_REGISTRY_IMAGE}:test-${CI_COMMIT_SHA}
+    - docker rmi -f ${TEST_BUILD_TAG} || true
+
+.deploy_template: &deploy_definition
+  stage: deploy
+  image: dtzar/helm-kubectl:2.12.3
+  before_script:
+    - source ./docker/scripts/ci-env-setup.sh
+    - |
+      if [[ ! -z ${STEAMATIC_KUBECONFIG} ]] ; then
+        Print_CI_Message "CONFIGURING HELM"
+        export KUBECONFIG=/tmp/config
+        echo ${STEAMATIC_KUBECONFIG} | base64 -d > ${KUBECONFIG}
+
+        helm init --client-only --service-account tiller --kubeconfig ${KUBECONFIG}
+        helm repo add stable https://kubernetes-charts.storage.googleapis.com/
+        helm repo update
+      fi
+  script:
+    - |
+      if [[ ! -z ${KUBECONFIG} ]] ; then
+        K8S_NAMESPACE=`echo "${CI_ENVIRONMENT_NAME}" | awk '{ print tolower($1) }'`
+        HELM_RELEASE_NAME="steamatic-${K8S_NAMESPACE}-${CI_PROJECT_NAME}"
+
+        Print_CI_Message "NAMESPACE: ${K8S_NAMESPACE}, RELEASE: ${HELM_RELEASE_NAME}"
+
+        cd ${HELM_CHARTS_DIR}
+        HELM_VALUES_FILE="./${HELM_CHART_NAME}/values/values.${K8S_NAMESPACE}.yaml"
+        if [[ ! -f ${HELM_VALUES_FILE} ]]; then
+          HELM_VALUES_FILE="./${HELM_CHART_NAME}/values.yaml"
+        fi
+        Print_CI_Message "VALUES FILE: ${HELM_VALUES_FILE}"
+        helm dependency build ${HELM_CHART_NAME}
+        helm upgrade -i \
+          --namespace ${K8S_NAMESPACE} \
+          --tiller-namespace ${K8S_NAMESPACE} \
+          --kubeconfig ${KUBECONFIG} \
+          --values ${HELM_VALUES_FILE} \
+          --set image.tag=${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA} \
+          --wait \
+          ${HELM_RELEASE_NAME} \
+          ${HELM_CHART_NAME} || \
+        (helm rollback \
+          --kubeconfig ${KUBECONFIG} \
+          --tiller-namespace ${K8S_NAMESPACE} \
+          ${HELM_RELEASE_NAME} 0 ; exit 1)
+      else
+        Print_CI_Message "KUBECONFIG is not defined, skipping deployment to k8s."
+      fi
+  tags:
+    - shared
+    - docker
+
+### Test dev branch
+
+test:
+  <<: *test_definition
+  only:
+    - dev
+  tags:
+    - shared
+    - docker
+
+### Build image (for dev, staging and master branches) and then push to registry
+
+build:
+  stage: build
+  image: callstats/docker-with-bash
+  variables:
+    DOCKER_DRIVER: overlay2
+  services:
+    - docker:dind
+  script:
+    - source ./docker/scripts/ci-env-setup.sh
+    - |
+      Print_CI_Message "BUILDING RELEASE IMAGE FOR ENVIRONMENT: ${ENVIRONMENT}, API BASE URL: ${API_SERVER_BASE_URL}"
+      docker build \
+        --build-arg ENVIRONMENT=${ENVIRONMENT} \
+        --build-arg API_BASE_URL=${API_SERVER_BASE_URL} \
+        --build-arg AZURE_CLIENT_ID=${AZURE_CLIENT_ID} \
+        --build-arg PUSHER_KEY=${PUSHER_KEY} \
+        --build-arg HELPSCOUT_BEACON_ID=${HELPSCOUT_BEACON_ID} \
+        --build-arg PUSHER_CLUSTER=${PUSHER_CLUSTER} \
+        -t ${IMAGE} -t ${IMAGE_SHA} \
+        .
+    - |
+      Print_CI_Message "PUSHING IMAGE TO REGISTRY"
+      docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+      docker push ${IMAGE}
+      docker push ${IMAGE_SHA}
+      docker rmi -f ${IMAGE} ${IMAGE_SHA} || true
+  only:
+    - dev
+    - staging
+    - training
+    - master
+  tags:
+    - shared
+    - docker
+
+### Run tests for feature branches on the shared builders
+
+test_branches:
+  <<: *test_definition
+  except:
+    - dev
+    - staging
+    - training
+    - master
+    - tags
+  tags:
+    - shared
+    - docker
+
+### Deploy
+
+deploy_dev:
+  <<: *deploy_definition
+  environment:
+    name: Development
+    url: 'http://dev.steamatic.com.au'
+  only:
+    - dev
+
+deploy_staging:
+  <<: *deploy_definition
+  environment:
+    name: Staging
+    url: 'http://staging.steamatic.com.au'
+  only:
+    - staging
+
+deploy_training:
+  <<: *deploy_definition
+  environment:
+    name: Training
+    url: 'http://training.steamatic.com.au'
+  only:
+    - training
+
+deploy_production:
+  <<: *deploy_definition
+  environment:
+    name: Production
+    url: 'http://steamatic.com.au'
+  only:
+    - master

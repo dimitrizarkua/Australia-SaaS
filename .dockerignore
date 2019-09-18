@@ -1,0 +1,23 @@
+# General stuff
+.git
+**/.DS_Store
+**/.gitignore
+**/.gitattributes
+**/Thumbs.db
+**/*.md
+**/.dockerignore
+**/.htaccess
+Dockerfile*
+.idea
+.editorconfig
+.gitlab-ci.yml
+
+# Node specific
+node_modules/
+npm-debug.log
+.npm/
+.vscode
+e2e
+
+# Project specific
+server

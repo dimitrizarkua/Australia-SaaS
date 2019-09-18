@@ -1,0 +1,40 @@
+# Default values for frontend.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nameOverride: ""
+fullnameOverride: ""
+
+deployment:
+  name: frontend
+  replicasCount: 1
+  restartPolicy: Always
+
+image:
+  repository: registry.gitlab.com/steamatic_nis/frontend
+  tag: training
+  pullPolicy: Always
+  pullSecret: gitlab-auth-frontend
+
+app:
+  env: training
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  host: training.steamatic.com.au
+  annotations:
+    kubernetes.io/ingress.class: traefik
+
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+            - key: purpose
+              operator: In
+              values:
+                - testing

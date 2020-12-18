@@ -21,7 +21,7 @@
     "classnames": "^2.2.6",
     "credit-card": "^3.0.2",
     "debounce-promise": "^3.1.0",
-    "dompurify": "^1.0.8",
+    "dompurify": "^2.0.17",
     "draft-convert": "^2.1.4",
     "draft-js": "^0.10.5",
     "draft-js-export-html": "^1.2.0",
